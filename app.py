@@ -530,7 +530,7 @@ st.markdown(
 )
 
 
-BASE_DIR = r"C:\Users\Harshu\Downloads\Pre-heat Model"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "output")
 
 DEFAULTS = {
