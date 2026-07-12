@@ -1,6 +1,6 @@
 streamlit
 joblib
-numpy==1.26.4  # (Replace with your actual local version)
+numpy
 pandas==2.2.0  # (Replace with your actual local version)
 plotly
 openai
