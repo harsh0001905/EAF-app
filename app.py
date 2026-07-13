@@ -546,6 +546,7 @@ for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+
 @st.cache_resource
 def load_production_models():
     try:
@@ -555,6 +556,7 @@ def load_production_models():
         return p, y, t
     except Exception:
         return None, None, None
+
 
 def render_metric_card(label, value, unit, helper, chip, accent, accent_soft):
     st.markdown(
@@ -569,6 +571,7 @@ def render_metric_card(label, value, unit, helper, chip, accent, accent_soft):
         unsafe_allow_html=True,
     )
 
+
 def chart_layout(fig, height=320):
     fig.update_layout(
         height=height,
@@ -581,6 +584,7 @@ def chart_layout(fig, height=320):
     fig.update_xaxes(showgrid=False, zeroline=False, linecolor="#e2e8f0", tickfont=dict(color="#475569"))
     fig.update_yaxes(gridcolor="#e8eef6", zeroline=False, tickfont=dict(color="#475569"))
     return fig
+
 
 m_power, m_yield, m_ttt = load_production_models()
 
@@ -595,11 +599,12 @@ client = (
     else None
 )
 
+
 # CALLBACK FUNCTION: Executes BEFORE the input widgets instantiate
 def run_ocr_and_update():
     if "uploaded_img_file" not in st.session_state or st.session_state["uploaded_img_file"] is None:
         return
-        
+
     if client is None:
         return
 
@@ -649,12 +654,13 @@ def run_ocr_and_update():
         st.session_state["ocr_dolo"] = float(parsed_data.get("DOLO", DEFAULTS["ocr_dolo"]))
         st.session_state["ocr_ps"] = float(parsed_data.get("PS", DEFAULTS["ocr_ps"]))
         st.session_state["ocr_tc"] = float(parsed_data.get("TC", DEFAULTS["ocr_tc"]))
-        
+
         # Save a success message to display inside the tab later
         st.session_state["ocr_success_msg"] = parsed_data
 
     except Exception as err:
         st.session_state["ocr_error_msg"] = f"Vision engine failed to isolate variables cleanly: {err}"
+
 
 with st.sidebar:
     st.markdown(
@@ -722,7 +728,8 @@ tab_sim, tab_ocr = st.tabs(["Simulator", "Vision OCR"])
 
 with tab_sim:
     if m_power is None:
-        st.error("Model pickles are missing inside the output folder. Run the training scripts before launching the tool.")
+        st.error(
+            "Model pickles are missing inside the output folder. Run the training scripts before launching the tool.")
     else:
         pred_power = m_power.predict(live_features)[0]
         pred_yield = m_yield.predict(live_features)[0]
@@ -785,7 +792,8 @@ with tab_sim:
                     hole=0.58,
                     color_discrete_sequence=["#12b8c4", "#2388ff", "#7dd3fc", "#cbd5e1", "#94a3b8"],
                 )
-                fig_pie.update_traces(textposition="inside", textinfo="percent", marker=dict(line=dict(color="#ffffff", width=3)))
+                fig_pie.update_traces(textposition="inside", textinfo="percent",
+                                      marker=dict(line=dict(color="#ffffff", width=3)))
                 chart_layout(fig_pie, height=305)
                 st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
@@ -867,7 +875,8 @@ with tab_sim:
 
                 if user_query:
                     if client is None:
-                        st.error("Gemini API key is not configured. Set GEMINI_API_KEY in .streamlit/secrets.toml or your environment.")
+                        st.error(
+                            "Gemini API key is not configured. Set GEMINI_API_KEY in .streamlit/secrets.toml or your environment.")
                         st.stop()
                     system_context = (
                         "You are a Senior Chief Metallurgical Engineer. "
@@ -906,7 +915,7 @@ with tab_ocr:
                 "Upload operational image",
                 type=["png", "jpg", "jpeg"],
                 label_visibility="collapsed",
-                key="uploaded_img_file" # Track file state globally
+                key="uploaded_img_file"  # Track file state globally
             )
             if uploaded_img is not None:
                 st.image(uploaded_img, caption="Uploaded production source", use_container_width=True)
@@ -923,25 +932,26 @@ with tab_ocr:
 
             # Link button straight to the callback function setup above
             st.button(
-                "Run Vision OCR Parsing", 
-                type="primary", 
-                use_container_width=True, 
+                "Run Vision OCR Parsing",
+                type="primary",
+                use_container_width=True,
                 disabled=uploaded_img is None,
                 on_click=run_ocr_and_update
             )
 
             if uploaded_img is None:
                 st.info("Upload an image to enable OCR parsing.")
-            
+
             # API Key guard checking inside UI flow
             if uploaded_img is not None and client is None:
-                st.error("Gemini API key is not configured. Set GEMINI_API_KEY in .streamlit/secrets.toml or your environment.")
+                st.error(
+                    "Gemini API key is not configured. Set GEMINI_API_KEY in .streamlit/secrets.toml or your environment.")
 
             # Render persistent feedback statuses from the pre-render callback context
             if "ocr_success_msg" in st.session_state:
                 st.success("Extraction complete. Sidebar recipe values were updated.")
                 st.json(st.session_state["ocr_success_msg"])
-                del st.session_state["ocr_success_msg"] # Clear flag to prevent message looping
+                del st.session_state["ocr_success_msg"]  # Clear flag to prevent message looping
 
             if "ocr_error_msg" in st.session_state:
                 st.error(st.session_state["ocr_error_msg"])
