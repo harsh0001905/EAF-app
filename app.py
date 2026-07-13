@@ -3,7 +3,8 @@ import html
 import json
 import os
 import re
-
+# ADD THIS EXACT LINE HERE:
+os.environ['OMP_NUM_THREADS'] = '1'
 import joblib
 import numpy as np
 import pandas as pd
