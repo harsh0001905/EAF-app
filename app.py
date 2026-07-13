@@ -1,10 +1,12 @@
-﻿import base64
+import base64
 import html
 import json
 import os
 import re
-# ADD THIS EXACT LINE HERE:
+
+# Prevent OpenMP multi-threading collisions with network loops
 os.environ['OMP_NUM_THREADS'] = '1'
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -13,14 +15,12 @@ import plotly.graph_objects as go
 import streamlit as st
 from openai import OpenAI
 
-
 st.set_page_config(
     page_title="EAF Pre-Heat Intelligence",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
 
 st.markdown(
     """
@@ -530,7 +530,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "output")
 
@@ -547,7 +546,6 @@ for key, value in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-
 @st.cache_resource
 def load_production_models():
     try:
@@ -557,7 +555,6 @@ def load_production_models():
         return p, y, t
     except Exception:
         return None, None, None
-
 
 def render_metric_card(label, value, unit, helper, chip, accent, accent_soft):
     st.markdown(
@@ -572,7 +569,6 @@ def render_metric_card(label, value, unit, helper, chip, accent, accent_soft):
         unsafe_allow_html=True,
     )
 
-
 def chart_layout(fig, height=320):
     fig.update_layout(
         height=height,
@@ -586,11 +582,8 @@ def chart_layout(fig, height=320):
     fig.update_yaxes(gridcolor="#e8eef6", zeroline=False, tickfont=dict(color="#475569"))
     return fig
 
-
 m_power, m_yield, m_ttt = load_production_models()
 
-# Gemini 3.5 Flash is the current stable, free-tier-capable Flash model
-# (subject to Gemini API quota and regional availability).
 GEMINI_FLASH_MODEL = os.environ.get("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
 api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 client = (
@@ -602,6 +595,66 @@ client = (
     else None
 )
 
+# CALLBACK FUNCTION: Executes BEFORE the input widgets instantiate
+def run_ocr_and_update():
+    if "uploaded_img_file" not in st.session_state or st.session_state["uploaded_img_file"] is None:
+        return
+        
+    if client is None:
+        return
+
+    try:
+        # Read file bytes from session state cache
+        img_bytes = st.session_state["uploaded_img_file"].read()
+        base64_image = base64.b64encode(img_bytes).decode("utf-8")
+
+        ocr_prompt = """
+        Look closely at the document/image provided. Identify and extract the numbers corresponding to these operational EAF targets:
+        1. Hot Metal Mass (HM)
+        2. DRI Mass (DRI)
+        3. Lime Tonnage (LIME)
+        4. Dolomite Tonnage (DOLO)
+        5. Panther Shot / Scrap Tonnage (PS)
+        6. Total Charge Target (TC)
+
+        Return ONLY a raw clean JSON dictionary block exactly containing these string format keys, nothing else, no markdown wrappers, no introductory chat text:
+        {"HM": 58.0, "DRI": 53.0, "LIME": 11.0, "DOLO": 1.8, "PS": 0.0, "TC": 122.0}
+        """
+
+        response = client.chat.completions.create(
+            model=GEMINI_FLASH_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": ocr_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+                    ],
+                }
+            ],
+        )
+
+        raw_res = response.choices[0].message.content.strip()
+        match = re.search(r"\{[\s\S]*\}", raw_res)
+        if match:
+            parsed_data = json.loads(match.group(0))
+            parsed_data = {k.upper().strip(): float(v) for k, v in parsed_data.items()}
+        else:
+            raise ValueError(f"Could not identify a valid JSON block inside the model response: {raw_res}")
+
+        # Safe update to session state before widgets render
+        st.session_state["ocr_hm"] = float(parsed_data.get("HM", DEFAULTS["ocr_hm"]))
+        st.session_state["ocr_dri"] = float(parsed_data.get("DRI", DEFAULTS["ocr_dri"]))
+        st.session_state["ocr_lime"] = float(parsed_data.get("LIME", DEFAULTS["ocr_lime"]))
+        st.session_state["ocr_dolo"] = float(parsed_data.get("DOLO", DEFAULTS["ocr_dolo"]))
+        st.session_state["ocr_ps"] = float(parsed_data.get("PS", DEFAULTS["ocr_ps"]))
+        st.session_state["ocr_tc"] = float(parsed_data.get("TC", DEFAULTS["ocr_tc"]))
+        
+        # Save a success message to display inside the tab later
+        st.session_state["ocr_success_msg"] = parsed_data
+
+    except Exception as err:
+        st.session_state["ocr_error_msg"] = f"Vision engine failed to isolate variables cleanly: {err}"
 
 with st.sidebar:
     st.markdown(
@@ -640,7 +693,7 @@ with st.sidebar:
         </div>
         <div class="sidebar-section">
             <p class="sidebar-label">Mix Split</p>
-            <p style="margin:0;color:#0f172a;font-weight:800;">HM {hm_frac:.1%} Â· DRI {dri_frac:.1%}</p>
+            <p style="margin:0;color:#0f172a;font-weight:800;">HM {hm_frac:.1%} · DRI {dri_frac:.1%}</p>
             <p style="margin:0.25rem 0 0;color:#64748b;font-size:0.82rem;">Basicity index: {basicity:.2f}</p>
         </div>
         """,
@@ -648,7 +701,6 @@ with st.sidebar:
     )
 
 live_features = np.array([[hm, dri, lime, dolo, ps, tc, hm_frac, dri_frac, basicity]])
-
 
 st.markdown(
     """
@@ -667,7 +719,6 @@ st.markdown(
 )
 
 tab_sim, tab_ocr = st.tabs(["Simulator", "Vision OCR"])
-
 
 with tab_sim:
     if m_power is None:
@@ -839,7 +890,6 @@ with tab_sim:
                         except Exception as e:
                             st.error(f"Failed to communicate with API: {e}")
 
-
 with tab_ocr:
     left, right = st.columns([1.05, 0.95])
 
@@ -856,6 +906,7 @@ with tab_ocr:
                 "Upload operational image",
                 type=["png", "jpg", "jpeg"],
                 label_visibility="collapsed",
+                key="uploaded_img_file" # Track file state globally
             )
             if uploaded_img is not None:
                 st.image(uploaded_img, caption="Uploaded production source", use_container_width=True)
@@ -870,67 +921,28 @@ with tab_ocr:
                 unsafe_allow_html=True,
             )
 
-            ocr_btn = st.button("Run Vision OCR Parsing", type="primary", use_container_width=True, disabled=uploaded_img is None)
+            # Link button straight to the callback function setup above
+            st.button(
+                "Run Vision OCR Parsing", 
+                type="primary", 
+                use_container_width=True, 
+                disabled=uploaded_img is None,
+                on_click=run_ocr_and_update
+            )
 
             if uploaded_img is None:
                 st.info("Upload an image to enable OCR parsing.")
+            
+            # API Key guard checking inside UI flow
+            if uploaded_img is not None and client is None:
+                st.error("Gemini API key is not configured. Set GEMINI_API_KEY in .streamlit/secrets.toml or your environment.")
 
-            if uploaded_img is not None and ocr_btn:
-                if client is None:
-                    st.error("Gemini API key is not configured. Set GEMINI_API_KEY in .streamlit/secrets.toml or your environment.")
-                    st.stop()
-                with st.spinner("Running vision extraction..."):
-                    try:
-                        img_bytes = uploaded_img.read()
-                        base64_image = base64.b64encode(img_bytes).decode("utf-8")
+            # Render persistent feedback statuses from the pre-render callback context
+            if "ocr_success_msg" in st.session_state:
+                st.success("Extraction complete. Sidebar recipe values were updated.")
+                st.json(st.session_state["ocr_success_msg"])
+                del st.session_state["ocr_success_msg"] # Clear flag to prevent message looping
 
-                        ocr_prompt = """
-                        Look closely at the document/image provided. Identify and extract the numbers corresponding to these operational EAF targets:
-                        1. Hot Metal Mass (HM)
-                        2. DRI Mass (DRI)
-                        3. Lime Tonnage (LIME)
-                        4. Dolomite Tonnage (DOLO)
-                        5. Panther Shot / Scrap Tonnage (PS)
-                        6. Total Charge Target (TC)
-
-                        Return ONLY a raw clean JSON dictionary block exactly containing these string format keys, nothing else, no markdown wrappers, no introductory chat text:
-                        {"HM": 58.0, "DRI": 53.0, "LIME": 11.0, "DOLO": 1.8, "PS": 0.0, "TC": 122.0}
-                        """
-
-                        response = client.chat.completions.create(
-                            model=GEMINI_FLASH_MODEL,
-                            messages=[
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {"type": "text", "text": ocr_prompt},
-                                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
-                                    ],
-                                }
-                            ],
-                        )
-
-                        raw_res = response.choices[0].message.content.strip()
-                        match = re.search(r"\{[\s\S]*\}", raw_res)
-                        if match:
-                            parsed_data = json.loads(match.group(0))
-                            parsed_data = {k.upper().strip(): float(v) for k, v in parsed_data.items()}
-                        else:
-                            raise ValueError(f"Could not identify a valid JSON block inside the model response: {raw_res}")
-
-                        st.session_state["ocr_hm"] = float(parsed_data.get("HM", DEFAULTS["ocr_hm"]))
-                        st.session_state["ocr_dri"] = float(parsed_data.get("DRI", DEFAULTS["ocr_dri"]))
-                        st.session_state["ocr_lime"] = float(parsed_data.get("LIME", DEFAULTS["ocr_lime"]))
-                        st.session_state["ocr_dolo"] = float(parsed_data.get("DOLO", DEFAULTS["ocr_dolo"]))
-                        st.session_state["ocr_ps"] = float(parsed_data.get("PS", DEFAULTS["ocr_ps"]))
-                        st.session_state["ocr_tc"] = float(parsed_data.get("TC", DEFAULTS["ocr_tc"]))
-
-                        st.success("Extraction complete. Sidebar recipe values were updated.")
-                        st.json(parsed_data)
-                        st.rerun()
-
-                    except Exception as err:
-                        st.error(f"Vision engine failed to isolate variables cleanly: {err}")
-
-
-
+            if "ocr_error_msg" in st.session_state:
+                st.error(st.session_state["ocr_error_msg"])
+                del st.session_state["ocr_error_msg"]
